@@ -12427,46 +12427,31 @@ ctx.stroke();
                     }
 
                     case 'stopped':
+                        // FIXED: Merged duplicate 'stopped' cases
                         // Leave after a longer while or if off-screen
                         if ((this.wanderTimer > 40000) || // Increased from 20000
-                            (this.direction < 0 && this.x < -50) || 
+                            (this.direction < 0 && this.x < -50) ||
                             (this.direction > 0 && this.x > canvas.width + 50)) {
                             return true; // Rat should be removed
                         }
-                        break;
-                        
-                    case 'stopped':
-                        // Stand still with slight movement
+
+                        // Stand still with slight fidgeting movement
                         this.velocity.x *= 0.9;
-                        
+
                         if (Math.random() < 0.05) {
-                            this.applyForce({ 
-                                x: (Math.random() - 0.5) * 0.01, 
-                                y: 0 
+                            this.applyForce({
+                                x: (Math.random() - 0.5) * 0.01,
+                                y: 0
                             });
                         }
-                        
-                        // Resume wandering after a pause
+
+                        // Resume wandering after a pause (3-5 seconds)
                         if (this.stateTimer > 3000 + Math.random() * 2000) {
                             this.state = 'wandering';
                             this.stateTimer = 0;
                         }
                         break;
-                        
-                    case 'fleeing':
-                        // Run away fast
-                        this.applyForce({ 
-                            x: this.direction * 0.02, 
-                            y: 0 
-                        });
-                        
-                        // Return to wandering after fleeing
-                        if (this.stateTimer > 3000) {
-                            this.state = 'wandering';
-                            this.stateTimer = 0;
-                        }
-                        break;
-                        
+
                     case 'raiding':
                         if (!this.nestTarget || nests.indexOf(this.nestTarget) === -1) {
                             this.nestTarget = null;
