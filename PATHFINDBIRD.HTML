@@ -2118,7 +2118,7 @@ let rainsCompleted = 0; // Track number of completed rain events (for pond forma
             SLEEPING: 'sleeping' // Sleeping at night or during rest
         };
         
-        const BIRDHOUSE_MATERIALS_NEEDED = 5;
+        const BIRDHOUSE_MATERIALS_NEEDED = 8; // Harder than nests (4 materials)
 
         // Bird types for variety
         const BIRD_TYPES = [
@@ -10752,19 +10752,43 @@ if ((isRaining || timeOfDay >= 1) && Math.random() < 0.4) { // 40% chance to see
                             this.checkNestCondition();
                         }
 
-                        // V40: ENFORCE ground position for resting birds (they were drifting!)
-                        const restingGroundY = canvas.height * GROUND_HEIGHT_RATIO + 40 + this.groundDepth;
-                        this.y = restingGroundY;
-                        this.velocity = { x: 0, y: 0 }; // Complete stillness while resting
-                        this.acceleration = { x: 0, y: 0 };
+                        // FIXED: Check if bird is in a birdhouse
+                        const myBirdhouse = birdhouses.find(bh => bh.occupants.includes(this));
+                        if (myBirdhouse) {
+                            // Bird is in a birdhouse - stay at birdhouse position
+                            this.x = myBirdhouse.x + (Math.random() - 0.5) * 10; // Slight movement
+                            this.y = myBirdhouse.y - myBirdhouse.poleHeight + 10;
+                            this.velocity = { x: 0, y: 0 };
+                            this.acceleration = { x: 0, y: 0 };
+                        } else {
+                            // V40: ENFORCE ground position for resting birds (they were drifting!)
+                            const restingGroundY = canvas.height * GROUND_HEIGHT_RATIO + 40 + this.groundDepth;
+                            this.y = restingGroundY;
+                            this.velocity = { x: 0, y: 0 }; // Complete stillness while resting
+                            this.acceleration = { x: 0, y: 0 };
+                        }
 
                         // Occasional subtle direction change only
                         if (Math.random() < 0.01) {
                             this.direction *= -1;
                         }
-                        
+
+                        // ADDED: Birds in birdhouses should sleep at night
+                        if (myBirdhouse && timeOfDay >= 1 && Math.random() < 0.02) {
+                            this.state = BIRD_STATES.SLEEPING;
+                            this.stateTimer = 0;
+                            debugLog(`Bird in birdhouse going to sleep for the night`);
+                            break;
+                        }
+
                         // End resting after a while or if hungry
                         if (this.stateTimer > BIRD_STATE_DURATION.RESTING || this.hunger > HUNGER_CRITICAL_THRESHOLD - 100) {
+                            // FIXED: Remove bird from birdhouse when leaving
+                            if (myBirdhouse) {
+                                myBirdhouse.removeOccupant(this);
+                                debugLog(`Bird left birdhouse at (${myBirdhouse.x}). Occupants: ${myBirdhouse.occupants.length}/${myBirdhouse.maxOccupants}`);
+                            }
+
                             if (this.hunger > HUNGER_CRITICAL_THRESHOLD - 100) {
                                 // Go find food
                                 this.findFoodSource();
@@ -10782,7 +10806,7 @@ if ((isRaining || timeOfDay >= 1) && Math.random() < 0.4) { // 40% chance to see
                                     // Return to flying
                                     this.state = BIRD_STATES.FLYING;
                                     this.stateTimer = 0;
-                                    
+
                                     // Fly somewhere
                                     this.generatePath(
                                         Math.random() * canvas.width,
@@ -10794,23 +10818,31 @@ if ((isRaining || timeOfDay >= 1) && Math.random() < 0.4) { // 40% chance to see
                         break;
 
                     case BIRD_STATES.SLEEPING:
-                        // Birds sleep while perched at night
+                        // Birds sleep while perched at night or in birdhouses
                         // Stay completely still with no movement
                         this.velocity.x = 0;
                         this.velocity.y = 0;
                         this.acceleration.x = 0;
                         this.acceleration.y = 0;
 
+                        // FIXED: Check if sleeping in a birdhouse
+                        const sleepingBirdhouse = birdhouses.find(bh => bh.occupants.includes(this));
+                        if (sleepingBirdhouse) {
+                            // Stay at birdhouse position while sleeping
+                            this.x = sleepingBirdhouse.x + (Math.random() - 0.5) * 5;
+                            this.y = sleepingBirdhouse.y - sleepingBirdhouse.poleHeight + 10;
+                        }
+
                         // Wake up if:
                         // 1. It becomes daytime
                         // 2. State timer exceeds duration
                         // 3. Very hungry
                         // 4. Danger nearby
-                        // 5. V40 FIX: Rain or thunder (weather disturbance)
+                        // 5. V40 FIX: Rain or thunder (weather disturbance) - BUT NOT if in birdhouse!
                         const isDaytime = timeOfDay < 1;
                         const nearbyDanger = rats.some(rat => distance(rat.x, rat.y, this.x, this.y) < 100) ||
                                            owls.some(owl => distance(owl.x, owl.y, this.x, this.y) < 150);
-                        const weatherDisturbance = isRaining || isThundering;
+                        const weatherDisturbance = !sleepingBirdhouse && (isRaining || isThundering); // Protected in birdhouse
 
                         if (isDaytime ||
                             this.stateTimer > BIRD_STATE_DURATION.SLEEPING ||
@@ -10818,18 +10850,25 @@ if ((isRaining || timeOfDay >= 1) && Math.random() < 0.4) { // 40% chance to see
                             nearbyDanger ||
                             weatherDisturbance) {
 
-                            // Wake up and return to perching
-                            this.state = BIRD_STATES.PERCHED;
+                            // FIXED: Wake up to appropriate state
+                            if (sleepingBirdhouse) {
+                                // Return to resting in birdhouse
+                                this.state = BIRD_STATES.RESTING;
+                                debugLog(`Bird woke up in birdhouse at (${sleepingBirdhouse.x})`);
+                            } else {
+                                // Return to perching
+                                this.state = BIRD_STATES.PERCHED;
+                                // If no perch target, find one
+                                if (!this.perchTarget) {
+                                    this.findPerch();
+                                }
+                            }
+
                             this.stateTimer = 0;
                             const wakeReason = weatherDisturbance ? ' (disturbed by weather)' :
                                              nearbyDanger ? ' (danger nearby)' :
                                              isDaytime ? ' (dawn)' : '';
                             debugLog(`${getBirdName(this)} woke up from sleep${wakeReason}`);
-
-                            // If no perch target, find one
-                            if (!this.perchTarget) {
-                                this.findPerch();
-                            }
                         }
                         break;
 
@@ -11231,37 +11270,59 @@ if ((isRaining || timeOfDay >= 1) && Math.random() < 0.4) { // 40% chance to see
 
                                // If reached final waypoint, clear path
 if (this.pathIndex >= this.path.length) {
+    // ADDED: Check if we're heading to a birdhouse
+    if (this.targetBirdhouse && birdhouses.indexOf(this.targetBirdhouse) !== -1) {
+        const birdhouseDist = distance(this.x, this.y, this.targetBirdhouse.x, this.targetBirdhouse.y - 20);
+
+        if (birdhouseDist < 30) {
+            // Reached birdhouse - become an occupant!
+            if (this.targetBirdhouse.addOccupant(this)) {
+                this.state = BIRD_STATES.RESTING;
+                this.stateTimer = 0;
+                debugLog(`Bird moved into birdhouse at (${this.targetBirdhouse.x}) as occupant ${this.targetBirdhouse.occupants.length}/${this.targetBirdhouse.maxOccupants}`);
+            }
+            this.targetBirdhouse = null;
+            this.path = [];
+            this.pathIndex = 0;
+        }
+    }
     // Check if we intended to hop
     // V40 CRITICAL FIX: Include groundDepth to match landing target and hopping state!
-    const groundTargetY = canvas.height * GROUND_HEIGHT_RATIO + 40 + this.groundDepth;
-    const responsiveScale = getResponsiveScale();
-    if (this.intendToHop && Math.abs(this.y - groundTargetY) < (50 * responsiveScale)) { // V40: Much more lenient (was 20px), RESPONSIVE
-        // FIXED: Smooth easing to ground instead of instant positioning
-        const easingSpeed = 0.3; // Gradual descent
-        this.y += (groundTargetY - this.y) * easingSpeed;
+    else if (this.intendToHop) {
+        const groundTargetY = canvas.height * GROUND_HEIGHT_RATIO + 40 + this.groundDepth;
+        const responsiveScale = getResponsiveScale();
+        if (Math.abs(this.y - groundTargetY) < (50 * responsiveScale)) { // V40: Much more lenient (was 20px), RESPONSIVE
+            // FIXED: Smooth easing to ground instead of instant positioning
+            const easingSpeed = 0.3; // Gradual descent
+            this.y += (groundTargetY - this.y) * easingSpeed;
 
-        // Slow down velocity gradually
-        this.velocity.x *= 0.8;
-        this.velocity.y *= 0.7;
+            // Slow down velocity gradually
+            this.velocity.x *= 0.8;
+            this.velocity.y *= 0.7;
 
-        // V40: Only transition when reasonably close (was 2px, now 15px for easy landing), RESPONSIVE
-        if (Math.abs(this.y - groundTargetY) < (15 * responsiveScale)) {
-            this.y = groundTargetY; // Snap to final position
-            this.velocity = { x: 0, y: 0 }; // Full stop
+            // V40: Only transition when reasonably close (was 2px, now 15px for easy landing), RESPONSIVE
+            if (Math.abs(this.y - groundTargetY) < (15 * responsiveScale)) {
+                this.y = groundTargetY; // Snap to final position
+                this.velocity = { x: 0, y: 0 }; // Full stop
 
-            // IMPORTANT: Transition to hopping state
-            this.state = BIRD_STATES.HOPPING;
-            this.stateTimer = 0;
-            this.intendToHop = false;
-            this.hopData = null; // Force fresh initialization
+                // IMPORTANT: Transition to hopping state
+                this.state = BIRD_STATES.HOPPING;
+                this.stateTimer = 0;
+                this.intendToHop = false;
+                this.hopData = null; // Force fresh initialization
 
-            debugLog(`Bird smoothly landed and transitioning to hopping state at (${this.x}, ${this.y})`);
+                debugLog(`Bird smoothly landed and transitioning to hopping state at (${this.x}, ${this.y})`);
+            }
+        } else {
+            // Not close enough to ground
+            this.path = [];
+            this.pathIndex = 0;
+            this.intendToHop = false; // Reset intention if we didn't transition
         }
     } else {
-        // Normal path completion or not close enough to ground
+        // Normal path completion
         this.path = [];
         this.pathIndex = 0;
-        this.intendToHop = false; // Reset intention if we didn't transition
     }
 }
                             } else {
