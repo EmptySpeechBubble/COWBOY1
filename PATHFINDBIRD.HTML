@@ -9830,8 +9830,8 @@ if ((isRaining || timeOfDay >= 1) && Math.random() < 0.4) { // 40% chance to see
                                 );
                             }
 
-                            // Add chance to build birdhouse (5% chance - increased to make birdhouses more common)
-                            if (!this.isWild && Math.random() < 0.05 && this.materialsHeld === 0) {
+                            // FIXED: Increased chance to build birdhouse (15% chance - was 5%)
+                            if (!this.isWild && Math.random() < 0.15 && this.materialsHeld === 0) {
                                 this.findOrCreateBirdhouse();
                             }
                         } else {
@@ -10297,23 +10297,24 @@ if ((isRaining || timeOfDay >= 1) && Math.random() < 0.4) { // 40% chance to see
                                 }
                             }
                             
-                            // Now find/build a nest with high priority
+                            // FIXED: Prioritize ongoing birdhouse construction over completed nests
                             if (this.isWild) {
                                 // Wild birds don't build nests - just drop the twig
                                 this.materialsHeld = 0;
                                 this.hasSpecialTwig = false;
                                 this.state = BIRD_STATES.FLYING;
                                 this.stateTimer = 0;
-                            } else if (this.myNest) {
-                                // Already have a nest - go build it with high priority
-                                this.state = BIRD_STATES.BUILDING;
-                                this.stateTimer = 0;
-                            } else if (this.buildingBirdhouse && this.buildingBirdhouse.isComplete === false) {
-                                // Building a birdhouse
+                            } else if (this.buildingBirdhouse && !this.buildingBirdhouse.isComplete) {
+                                // Building a birdhouse - stay focused on it!
                                 this.state = BIRD_STATES.BUILDING_BIRDHOUSE;
                                 this.stateTimer = 0;
+                                debugLog(`Bird returning to birdhouse with materials`);
+                            } else if (this.myNest && !this.myNest.isComplete) {
+                                // Have an incomplete nest - go build it
+                                this.state = BIRD_STATES.BUILDING;
+                                this.stateTimer = 0;
                             } else {
-                                // No nest yet - find/create one
+                                // No incomplete construction - find/create a nest
                                 this.findOrCreateNest();
                             }
                             
@@ -11308,8 +11309,8 @@ if (this.pathIndex >= this.path.length) {
                                 } else if (!this.isWild && !this.myNest && r < 0.1) {
                                     // Find building materials (FIXED: removed twigs.length requirement)
                                     this.findTwigs();
-                                } else if (!this.isWild && Math.random() < 0.05 && this.materialsHeld === 0) {
-                                    // Add chance to build birdhouse (5% chance - increased to make birdhouses more common)
+                                } else if (!this.isWild && Math.random() < 0.15 && this.materialsHeld === 0) {
+                                    // FIXED: Increased chance to build birdhouse (15% chance - was 5%)
                                     this.findOrCreateBirdhouse();
 
 
